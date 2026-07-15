@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7efe8" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="音庭" />
+    <title>音庭 — 音の種を育てよう</title>
+    <meta name="description" content="音の種を置くだけで、小さな曲が育つ音楽の箱庭。" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">♪</span>
+          <div>
+            <h1>音庭</h1>
+            <p>音の種を置いて、ちいさな景色を育てよう</p>
+          </div>
+        </div>
+
+        <div class="transport" aria-label="再生操作">
+          <button id="playButton" class="control primary" type="button" aria-pressed="false">
+            <span aria-hidden="true">▶</span><span>再生</span>
+          </button>
+          <button id="stopButton" class="control" type="button">
+            <span aria-hidden="true">■</span><span>停止</span>
+          </button>
+          <button id="recordButton" class="control record" type="button" aria-label="録音" aria-pressed="false">
+            <span class="record-dot" aria-hidden="true"></span><span>録音</span>
+          </button>
+          <button id="clearButton" class="control ghost" type="button">
+            <span aria-hidden="true">↺</span><span>全部消す</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="音庭の作曲エリア">
+        <aside class="seed-tray" aria-label="音の種">
+          <div class="tray-heading">
+            <span>音の種</span>
+            <small>つまんで置こう</small>
+          </div>
+
+          <div class="seed-list">
+            <button class="seed-card sparkle" type="button" data-seed="sparkle" draggable="true" aria-label="きらきらの種。お庭へドラッグ">
+              <span class="seed-icon">✨</span>
+              <span class="seed-copy"><strong>きらきら</strong><small>澄んだ高い音</small></span>
+              <span class="drag-grip" aria-hidden="true">⠿</span>
+            </button>
+            <button class="seed-card fluffy" type="button" data-seed="fluffy" draggable="true" aria-label="ふわふわの種。お庭へドラッグ">
+              <span class="seed-icon">🌱</span>
+              <span class="seed-copy"><strong>ふわふわ</strong><small>やさしい空気</small></span>
+              <span class="drag-grip" aria-hidden="true">⠿</span>
+            </button>
+            <button class="seed-card bubbly" type="button" data-seed="bubbly" draggable="true" aria-label="ぽこぽこの種。お庭へドラッグ">
+              <span class="seed-icon">💧</span>
+              <span class="seed-copy"><strong>ぽこぽこ</strong><small>はずむリズム</small></span>
+              <span class="drag-grip" aria-hidden="true">⠿</span>
+            </button>
+            <button class="seed-card grainy" type="button" data-seed="grainy" draggable="true" aria-label="ざらざらの種。お庭へドラッグ">
+              <span class="seed-icon">🖤</span>
+              <span class="seed-copy"><strong>ざらざら</strong><small>深い低い音</small></span>
+              <span class="drag-grip" aria-hidden="true">⠿</span>
+            </button>
+            <button class="seed-card drizzle" type="button" data-seed="drizzle" draggable="true" aria-label="しとしとの種。お庭へドラッグ">
+              <span class="seed-icon">🌧️</span>
+              <span class="seed-copy"><strong>しとしと</strong><small>雨と小川の音</small></span>
+              <span class="drag-grip" aria-hidden="true">⠿</span>
+            </button>
+            <button class="seed-card breeze" type="button" data-seed="breeze" draggable="true" aria-label="そよそよの種。お庭へドラッグ">
+              <span class="seed-icon">🍃</span>
+              <span class="seed-copy"><strong>そよそよ</strong><small>風と息の音</small></span>
+              <span class="drag-grip" aria-hidden="true">⠿</span>
+            </button>
+            <button class="seed-card wood" type="button" data-seed="wood" draggable="true" aria-label="こつこつの種。お庭へドラッグ">
+              <span class="seed-icon">🌳</span>
+              <span class="seed-copy"><strong>こつこつ</strong><small>木と枝の音</small></span>
+              <span class="drag-grip" aria-hidden="true">⠿</span>
+            </button>
+            <button class="seed-card bird" type="button" data-seed="bird" draggable="true" aria-label="ぴるぴるの種。お庭へドラッグ">
+              <span class="seed-icon">🐦</span>
+              <span class="seed-copy"><strong>ぴるぴる</strong><small>小鳥と笛の音</small></span>
+              <span class="drag-grip" aria-hidden="true">⠿</span>
+            </button>
+          </div>
+
+          <div class="tempo-control">
+            <div class="tempo-heading">
+              <label for="bpmSlider">成長速度</label>
+              <output id="bpmValue" for="bpmSlider">84 BPM</output>
+            </div>
+            <div class="tempo-slider-row">
+              <span aria-hidden="true">ゆっくり</span>
+              <input id="bpmSlider" type="range" min="50" max="160" step="2" value="84" aria-valuetext="ふつう 84 BPM" />
+              <span aria-hidden="true">はやい</span>
+            </div>
+          </div>
+        </aside>
+
+        <div class="garden-wrap">
+          <div id="garden" class="garden" role="application" aria-label="音のお庭。上ほど高い音、右ほど遅いタイミングです">
+            <div class="garden-sky" aria-hidden="true"></div>
+            <div class="garden-grid" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div id="playhead" class="playhead" aria-hidden="true"></div>
+            <div id="emptyHint" class="empty-hint">
+              <span class="hint-sprout" aria-hidden="true">🌱</span>
+              <strong>ここに種を置いてみよう</strong>
+              <span>上は高い音 · 右へ行くほど後に鳴る</span>
+            </div>
+            <div class="garden-label high" aria-hidden="true">たかい</div>
+            <div class="garden-label low" aria-hidden="true">ひくい</div>
+          </div>
+
+          <div class="garden-note">
+            <span><i class="move-dot" aria-hidden="true"></i>置いた種は動かせる</span>
+            <span><i class="grow-dot" aria-hidden="true"></i>ぽんっと押すと大きくなる</span>
+            <span><i class="pluck-dot" aria-hidden="true"></i>長押しで摘み取る</span>
+          </div>
+
+          <section id="recordingPanel" class="recording-panel" aria-label="録音した音庭" hidden>
+            <div class="recording-copy">
+              <span class="recording-icon" aria-hidden="true">♫</span>
+              <div><strong>曲の種ができたよ</strong><small>マイクは使わず、音庭の音だけを録音しました</small></div>
+            </div>
+            <audio id="recordingAudio" controls preload="metadata"></audio>
+            <div class="recording-actions">
+              <a id="downloadRecording" class="recording-action primary" href="#" download>端末に保存</a>
+              <button id="shareRecording" class="recording-action" type="button" hidden>共有</button>
+              <button id="discardRecording" class="recording-action quiet" type="button">録音を消す</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

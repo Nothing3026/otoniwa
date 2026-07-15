@@ -1,0 +1,26 @@
+{
+  "name": "音庭 — 音の種を育てよう",
+  "short_name": "音庭",
+  "description": "音の種を置くだけで、小さな曲が育つ音楽の箱庭。",
+  "lang": "ja",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7efe8",
+  "theme_color": "#718f7c",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
