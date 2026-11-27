@@ -1675,7 +1675,7 @@
     sectionElement(section)?.appendChild(el);
     updateEmptyHints();
     if (options.quiet) return seed;
-    if (!isPlaying) startPlayback({ quiet: true, follow: false, from: "here" });
+    if (!isPlaying) startPlayback({ quiet: true, follow: false, from: playbackStartMode });
     else if (ensureAudio()) trigger(seed, audio.currentTime + 0.02);
     return seed;
   }
