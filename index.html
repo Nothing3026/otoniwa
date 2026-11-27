@@ -106,24 +106,81 @@
         </aside>
 
         <div class="garden-wrap">
-          <div id="garden" class="garden" role="application" aria-label="音のお庭。上ほど高い音、右ほど遅いタイミングです">
-            <div class="garden-sky" aria-hidden="true"></div>
-            <div class="garden-grid" aria-hidden="true">
-              <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          <div class="garden-toolbar" aria-label="お庭の移動と再生位置">
+            <div class="listen-from" role="group" aria-label="どこから聴くか">
+              <button id="listenFromStart" class="path-button" type="button">はじめから聴く</button>
+              <button id="listenFromHere" class="path-button active" type="button">ここから聴く</button>
             </div>
-            <div id="playhead" class="playhead" aria-hidden="true"></div>
-            <div id="emptyHint" class="empty-hint">
-              <span class="hint-sprout" aria-hidden="true">🌱</span>
-              <strong>ここに種を置いてみよう</strong>
-              <span>上は高い音 · 右へ行くほど後に鳴る</span>
+            <div class="garden-actions">
+              <button id="unlockSectionButton" class="path-button warm" type="button" hidden>この庭にも手を加える</button>
+              <button id="extendGardenButton" class="path-button grow" type="button"><span aria-hidden="true">🌱</span> 庭をのばす</button>
             </div>
-            <div class="garden-label high" aria-hidden="true">たかい</div>
-            <div class="garden-label low" aria-hidden="true">ひくい</div>
           </div>
+
+          <div id="garden" class="garden" role="application" aria-label="横へ続く音のお庭。上ほど高い音、右ほど後に鳴ります">
+            <div id="gardenTrack" class="garden-track"></div>
+            <div id="playhead" class="playhead" aria-hidden="true"></div>
+            <div id="suggestionGlow" class="suggestion-glow" aria-hidden="true" hidden></div>
+
+            <button id="fairyButton" class="resident fairy" type="button" aria-label="妖精さんに相談する" aria-haspopup="dialog" aria-expanded="false">
+              <span class="resident-icon" aria-hidden="true">🧚</span>
+              <span class="resident-caption">妖精さん</span>
+            </button>
+            <button id="gnomeButton" class="resident gnome" type="button" aria-label="こびとさんに相談する" aria-haspopup="dialog" aria-expanded="false">
+              <span class="resident-icon" aria-hidden="true">🧑‍🌾</span>
+              <span class="resident-caption">こびとさん</span>
+            </button>
+
+            <section id="residentBubble" class="resident-bubble" role="dialog" aria-labelledby="residentBubbleName" aria-describedby="residentBubbleMessage" hidden>
+              <div class="resident-bubble-heading">
+                <span id="residentBubbleIcon" class="bubble-icon" aria-hidden="true">🧚</span>
+                <strong id="residentBubbleName">妖精さん</strong>
+              </div>
+              <p id="residentBubbleMessage"></p>
+              <div id="residentActions" class="resident-actions"></div>
+            </section>
+
+          </div>
+
+          <div id="seedBasket" class="seed-basket" aria-hidden="true">
+            <div id="seedPendingBar" class="seed-pending-bar" hidden>
+              <button id="seedPendingDisplay" class="seed-pending-display" type="button" aria-label="種を変える"></button>
+              <button id="seedPendingCancel" class="seed-pending-cancel" type="button" aria-label="種まきをやめる">×</button>
+            </div>
+            <button id="seedBasketBtn" class="seed-basket-btn" type="button" aria-label="種かごを開く" aria-expanded="false">
+              <span aria-hidden="true">🌱</span><span>種かご</span>
+            </button>
+            <div id="seedBasketPanel" class="seed-basket-panel" hidden role="group" aria-label="音の種を選ぼう">
+              <button class="basket-panel-seed sparkle" type="button" data-seed="sparkle" aria-label="きらきら"><span class="bp-icon">✨</span><span class="bp-label">きらきら</span></button>
+              <button class="basket-panel-seed fluffy"  type="button" data-seed="fluffy"  aria-label="ふわふわ"><span class="bp-icon">🌱</span><span class="bp-label">ふわふわ</span></button>
+              <button class="basket-panel-seed bubbly"  type="button" data-seed="bubbly"  aria-label="ぽこぽこ"><span class="bp-icon">💧</span><span class="bp-label">ぽこぽこ</span></button>
+              <button class="basket-panel-seed grainy"  type="button" data-seed="grainy"  aria-label="ざらざら"><span class="bp-icon">🖤</span><span class="bp-label">ざらざら</span></button>
+              <button class="basket-panel-seed drizzle" type="button" data-seed="drizzle" aria-label="しとしと"><span class="bp-icon">🌧️</span><span class="bp-label">しとしと</span></button>
+              <button class="basket-panel-seed breeze"  type="button" data-seed="breeze"  aria-label="そよそよ"><span class="bp-icon">🍃</span><span class="bp-label">そよそよ</span></button>
+              <button class="basket-panel-seed wood"    type="button" data-seed="wood"    aria-label="こつこつ"><span class="bp-icon">🌳</span><span class="bp-label">こつこつ</span></button>
+              <button class="basket-panel-seed bird"    type="button" data-seed="bird"    aria-label="ぴるぴる"><span class="bp-icon">🐦</span><span class="bp-label">ぴるぴる</span></button>
+            </div>
+          </div>
+
+          <nav id="gardenMap" class="garden-map" aria-label="お庭の現在位置"></nav>
+
+          <details class="relay-panel">
+            <summary><span aria-hidden="true">🎒</span> 音のバトン</summary>
+            <div class="relay-content">
+              <label class="gardener-name">庭師さんの名前 <input id="gardenerName" maxlength="30" placeholder="書かなくても大丈夫" autocomplete="nickname" /></label>
+              <div class="relay-actions">
+                <button id="passBatonButton" class="relay-button primary" type="button">音のバトンを渡す</button>
+                <label class="relay-button file-button">続きを育てる<input id="receiveBatonInput" type="file" accept="application/json,.json" /></label>
+              </div>
+              <p class="relay-help">受け取ったお庭は大切に残り、最後に新しい区画がひらきます。名前以外の個人情報は入りません。</p>
+              <details class="relay-history"><summary>リレーの記録を見る</summary><ol id="relayHistoryList"></ol></details>
+            </div>
+          </details>
 
           <div class="garden-note">
             <span><i class="move-dot" aria-hidden="true"></i>置いた種は動かせる</span>
             <span><i class="grow-dot" aria-hidden="true"></i>ぽんっと押すと大きくなる</span>
+            <span><i class="tuplet-dot" aria-hidden="true"></i>ぴったり重ねると連符</span>
             <span><i class="pluck-dot" aria-hidden="true"></i>長押しで摘み取る</span>
           </div>
 
@@ -143,6 +200,11 @@
       </section>
     </main>
 
+    <div id="batonScene" class="baton-scene" role="status" aria-live="polite" hidden>
+      <button id="skipBatonScene" type="button">スキップ</button>
+      <div class="baton-bag" aria-hidden="true">🎒<span>✨</span></div>
+      <strong id="batonSceneMessage">音の種を大切に包んでいるよ…</strong>
+    </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="app.js"></script>
   </body>

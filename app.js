@@ -11,12 +11,39 @@
   const downloadRecording = document.querySelector("#downloadRecording");
   const shareRecording = document.querySelector("#shareRecording");
   const discardRecording = document.querySelector("#discardRecording");
-  const emptyHint = document.querySelector("#emptyHint");
+  const gardenTrack = document.querySelector("#gardenTrack");
+  const gardenMap = document.querySelector("#gardenMap");
+  const extendGardenButton = document.querySelector("#extendGardenButton");
+  const unlockSectionButton = document.querySelector("#unlockSectionButton");
+  const listenFromStart = document.querySelector("#listenFromStart");
+  const listenFromHere = document.querySelector("#listenFromHere");
+  const gardenerName = document.querySelector("#gardenerName");
+  const passBatonButton = document.querySelector("#passBatonButton");
+  const receiveBatonInput = document.querySelector("#receiveBatonInput");
+  const relayHistoryList = document.querySelector("#relayHistoryList");
+  const batonScene = document.querySelector("#batonScene");
+  const batonSceneMessage = document.querySelector("#batonSceneMessage");
+  const skipBatonScene = document.querySelector("#skipBatonScene");
   const playhead = document.querySelector("#playhead");
   const toast = document.querySelector("#toast");
   const seedCards = [...document.querySelectorAll(".seed-card")];
   const bpmSlider = document.querySelector("#bpmSlider");
   const bpmValue = document.querySelector("#bpmValue");
+  const fairyButton = document.querySelector("#fairyButton");
+  const gnomeButton = document.querySelector("#gnomeButton");
+  const residentBubble = document.querySelector("#residentBubble");
+  const residentBubbleIcon = document.querySelector("#residentBubbleIcon");
+  const residentBubbleName = document.querySelector("#residentBubbleName");
+  const residentBubbleMessage = document.querySelector("#residentBubbleMessage");
+  const residentActions = document.querySelector("#residentActions");
+  const suggestionGlow = document.querySelector("#suggestionGlow");
+  const seedBasket = document.querySelector("#seedBasket");
+  const seedBasketBtn = document.querySelector("#seedBasketBtn");
+  const seedBasketPanel = document.querySelector("#seedBasketPanel");
+  const seedPendingBar = document.querySelector("#seedPendingBar");
+  const seedPendingDisplay = document.querySelector("#seedPendingDisplay");
+  const seedPendingCancel = document.querySelector("#seedPendingCancel");
+  const seedTray = document.querySelector(".seed-tray");
 
   const kinds = {
     sparkle: { icon: "✨", label: "きらきら" },
@@ -31,9 +58,23 @@
 
   const notes = [130.81, 146.83, 164.81, 196, 220, 261.63, 293.66, 329.63, 392, 440, 523.25, 587.33];
   const scheduleAhead = 0.12;
+  const DATA_VERSION = 3;
+  const MAX_SECTIONS = 12;
+  const MAX_SEEDS = 768;
+  const SESSION_KEY = "otoniwa-garden-v3";
+  const LEGACY_SESSION_KEY = "otoniwa-garden";
   const seeds = [];
+  const sections = [];
+  const relayHistory = [];
   let bpm = 84;
   let nextId = 1;
+  let activeSectionIndex = 0;
+  let playbackStartMode = "here";
+  let userInteractingUntil = 0;
+  let programmaticScrollUntil = 0;
+  let scrollTimer = null;
+  let saveTimer = null;
+  let batonTimer = null;
   let audio = null;
   let master = null;
   let noiseBuffer = null;
@@ -43,6 +84,8 @@
   let currentStep = 0;
   let nextStepTime = 0;
   let toastTimer = null;
+  let followPlayback = false;
+  let isManipulating = false;
   let dragType = null;
   let pointerGhost = null;
   let recordingProcessor = null;
@@ -55,6 +98,268 @@
   let recordingBlob = null;
   let recordingUrl = null;
   let recordingFilename = "";
+  let residentSession = null;
+  let residentWorkTimer = null;
+  let residentChangePending = false;
+  let fairySuggestionCursor = 0;
+  let pendingFairySuggestion = null;
+  let fairyAddedSeed = null;
+  let gnomeProposal = null;
+  let gnomeSnapshot = null;
+  let pendingSeedType = null;
+  let gardenTapId = null;
+  let gardenTapStartX = 0;
+  let gardenTapStartY = 0;
+  let seedBasketFrame = null;
+
+  function makeId(prefix = "garden") {
+    if (globalThis.crypto?.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  function gardenerLabel(index = relayHistory.length) {
+    const name = gardenerName.value.trim();
+    if (name) return name.slice(0, 30);
+    if (index === 0) return "最初の庭師";
+    return `${index + 1}人目の庭師`;
+  }
+
+  function activeSection() {
+    return sections[activeSectionIndex] || sections[0];
+  }
+
+  function activeSeeds() {
+    return seeds.filter(seed => seed.section === activeSectionIndex);
+  }
+
+  function sectionElement(index) {
+    return gardenTrack.querySelector(`[data-section-index="${index}"]`);
+  }
+
+  function updateEmptyHints() {
+    sections.forEach((_, index) => {
+      const hint = sectionElement(index)?.querySelector(".empty-hint");
+      if (hint) hint.classList.toggle("hidden", seeds.some(seed => seed.section === index));
+    });
+  }
+
+  function updatePerformanceMode() {
+    const smallDevice = Number(navigator.hardwareConcurrency || 8) <= 4;
+    garden.classList.toggle("light-effects", smallDevice || sections.length > 8);
+  }
+
+  function sectionMarkup(index) {
+    return `
+      <div class="garden-sky" aria-hidden="true"></div>
+      <div class="garden-grid" aria-hidden="true">${"<span></span>".repeat(8)}</div>
+      <div class="empty-hint">
+        <span class="hint-sprout" aria-hidden="true">🌱</span>
+        <strong>${index ? "続きをここから育てよう" : "ここに種を置いてみよう"}</strong>
+        <span>上は高い音 · 右へ行くほど後に鳴る</span>
+      </div>
+      <div class="garden-label high" aria-hidden="true">たかい</div>
+      <div class="garden-label low" aria-hidden="true">ひくい</div>`;
+  }
+
+  function wireSectionDrop(sectionEl) {
+    sectionEl.addEventListener("dragover", event => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      if (!sections[Number(sectionEl.dataset.sectionIndex)]?.locked) sectionEl.classList.add("drag-over");
+    });
+    sectionEl.addEventListener("dragleave", event => {
+      if (!sectionEl.contains(event.relatedTarget)) sectionEl.classList.remove("drag-over");
+    });
+    sectionEl.addEventListener("drop", event => {
+      event.preventDefault();
+      const sectionIndex = Number(sectionEl.dataset.sectionIndex);
+      sectionEl.classList.remove("drag-over");
+      if (sections[sectionIndex]?.locked) {
+        showToast("前の庭師さんのお庭は大切に残しているよ");
+        return;
+      }
+      setActiveSection(sectionIndex, false);
+      const type = event.dataTransfer.getData("text/plain") || dragType;
+      const point = positionFromPoint(event.clientX, event.clientY, sectionEl);
+      addSeed(type, point.x, point.y, sectionIndex);
+    });
+  }
+
+  function renderSections() {
+    const previousChildren = new Map([...gardenTrack.children].map(el => [el.dataset.sectionId, el]));
+    gardenTrack.replaceChildren();
+    sections.forEach((section, index) => {
+      let el = previousChildren.get(section.id);
+      if (!el) {
+        el = document.createElement("section");
+        el.className = "garden-section";
+        el.dataset.sectionId = section.id;
+        el.innerHTML = sectionMarkup(index);
+        wireSectionDrop(el);
+      }
+      el.dataset.sectionIndex = String(index);
+      el.classList.toggle("locked", Boolean(section.locked));
+      el.setAttribute("aria-label", `${index + 1}つ目のお庭${section.locked ? "。前の庭師さんの音" : ""}`);
+      gardenTrack.appendChild(el);
+    });
+    seeds.forEach(seed => sectionElement(seed.section)?.appendChild(seed.el));
+    renderGardenMap();
+    updateEmptyHints();
+    updatePerformanceMode();
+  }
+
+  function renderGardenMap() {
+    gardenMap.replaceChildren();
+    sections.forEach((section, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = section.locked ? "🍃" : "🌱";
+      button.classList.toggle("active", index === activeSectionIndex);
+      button.dataset.authorMark = section.author ? section.author.slice(0, 1) : "";
+      button.setAttribute("aria-label", `${index + 1}つ目のお庭へ${section.author ? `。${section.author}` : ""}`);
+      button.addEventListener("click", () => setActiveSection(index));
+      gardenMap.appendChild(button);
+    });
+    unlockSectionButton.hidden = !activeSection()?.locked;
+    extendGardenButton.disabled = sections.length >= MAX_SECTIONS;
+  }
+
+  function setActiveSection(index, scroll = true) {
+    activeSectionIndex = Math.max(0, Math.min(sections.length - 1, Number(index) || 0));
+    renderGardenMap();
+    if (scroll) {
+      userInteractingUntil = Date.now() + 900;
+      programmaticScrollUntil = Date.now() + 700;
+      sectionElement(activeSectionIndex)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+    }
+  }
+
+  function addSection({ locked = false, author = "" } = {}, announce = true) {
+    if (sections.length >= MAX_SECTIONS) {
+      showToast("お庭はここまで育ったよ");
+      return null;
+    }
+    const section = { id: makeId("section"), locked: Boolean(locked), author: String(author || "").slice(0, 30) };
+    sections.push(section);
+    renderSections();
+    if (announce) {
+      setActiveSection(sections.length - 1);
+      showToast("小道の先に、新しいお庭がひらいたよ");
+    }
+    queueSessionSave();
+    return section;
+  }
+
+  function serializeGarden() {
+    return {
+      app: "otoniwa",
+      version: DATA_VERSION,
+      title: "音庭で生まれた曲",
+      bpm,
+      sections: sections.map(({ id, author, locked }) => ({ id, author, locked: Boolean(locked) })),
+      seeds: seeds.map(({ id, type, x, y, size, section, source }) => ({ id, type, x, y, size, section, source: source || "user" })),
+      effects: { plants: true, light: garden.classList.contains("light-effects") ? "light" : "full" },
+      relay: relayHistory.map(entry => ({ gardener: entry.gardener, at: entry.at, sections: entry.sections })),
+    };
+  }
+
+  function queueSessionSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify(serializeGarden())); } catch (_) { /* private mode */ }
+    }, 180);
+  }
+
+  function normalizeGardenData(raw) {
+    if (Array.isArray(raw)) raw = { version: 1, seeds: raw };
+    if (!raw || typeof raw !== "object") throw new Error("音のバトンの形が分かりません");
+    const rawSeeds = Array.isArray(raw.seeds) ? raw.seeds : [];
+    const rawSections = Array.isArray(raw.sections) && raw.sections.length ? raw.sections : [{ id: "legacy-section", author: "最初の庭師" }];
+    if (rawSections.length > MAX_SECTIONS || rawSeeds.length > MAX_SEEDS) throw new Error("この音のバトンは大きすぎるみたい");
+    const normalizedSections = rawSections.map((section, index) => ({
+      id: typeof section?.id === "string" ? section.id.slice(0, 80) : `section-${index + 1}`,
+      author: typeof section?.author === "string" ? section.author.slice(0, 30) : "",
+      locked: Boolean(section?.locked),
+    }));
+    const normalizedSeeds = rawSeeds.map((seed, index) => {
+      const type = String(seed?.type || "");
+      const x = Number(seed?.x);
+      const y = Number(seed?.y);
+      const size = Number(seed?.size);
+      const section = Number.isInteger(Number(seed?.section)) ? Number(seed.section) : 0;
+      if (!kinds[type] || !Number.isFinite(x) || !Number.isFinite(y) || ![1, 2, 3].includes(size) || section < 0 || section >= normalizedSections.length) throw new Error(`読めない音の種があります（${index + 1}粒目）`);
+      return { id: Number.isFinite(Number(seed.id)) ? Number(seed.id) : index + 1, type, x: Math.max(.035, Math.min(.965, x)), y: Math.max(.055, Math.min(.945, y)), size, section, source: typeof seed.source === "string" ? seed.source.slice(0, 20) : "user" };
+    });
+    const history = Array.isArray(raw.relay) ? raw.relay.slice(0, 50).map(entry => ({ gardener: String(entry?.gardener || "庭師さん").slice(0, 30), at: String(entry?.at || ""), sections: Math.max(1, Math.min(MAX_SECTIONS, Number(entry?.sections) || 1)) })) : [];
+    return { bpm: Math.max(50, Math.min(160, Number(raw.bpm) || 84)), sections: normalizedSections, seeds: normalizedSeeds, relay: history };
+  }
+
+  function runDataFormatSelfCheck() {
+    let brokenRejected = false;
+    const legacy = normalizeGardenData([{ id: 1, type: "sparkle", x: .2, y: .3, size: 2 }]);
+    try {
+      normalizeGardenData({ sections: [{ id: "one" }], seeds: [{ type: "unknown", x: .2, y: .3, size: 2 }] });
+    } catch (_) {
+      brokenRejected = true;
+    }
+    const passed = legacy.sections.length === 1 && legacy.seeds[0]?.section === 0 && brokenRejected;
+    document.documentElement.dataset.dataCheck = passed ? "passed" : "failed";
+    return passed;
+  }
+
+  function replaceGardenFromData(data, { received = false } = {}) {
+    stopEverything();
+    seeds.splice(0).forEach(seed => seed.el?.remove());
+    sections.splice(0);
+    relayHistory.splice(0);
+    data.sections.forEach(section => sections.push({ ...section, locked: received ? true : Boolean(section.locked) }));
+    data.relay.forEach(entry => relayHistory.push(entry));
+    bpm = data.bpm;
+    bpmSlider.value = String(bpm);
+    updateTempoDisplay();
+    renderSections();
+    data.seeds.forEach(seed => addSeed(seed.type, seed.x, seed.y, seed.section, { size: seed.size, id: seed.id, source: seed.source, quiet: true, allowLocked: true }));
+    nextId = Math.max(1, ...seeds.map(seed => seed.id + 1));
+    if (received) {
+      const author = gardenerName.value.trim().slice(0, 30);
+      addSection({ author }, false);
+      activeSectionIndex = sections.length - 1;
+    }
+    renderSections();
+    setActiveSection(received ? sections.length - 1 : 0, false);
+    renderRelayHistory();
+    queueSessionSave();
+  }
+
+  function renderRelayHistory() {
+    relayHistoryList.replaceChildren();
+    if (!relayHistory.length) {
+      const item = document.createElement("li");
+      item.textContent = "まだ最初のお庭です";
+      relayHistoryList.appendChild(item);
+      return;
+    }
+    relayHistory.forEach(entry => {
+      const item = document.createElement("li");
+      item.textContent = `${entry.gardener}さんが ${entry.sections}つ目まで育てました`;
+      relayHistoryList.appendChild(item);
+    });
+  }
+
+  function showBatonScene(message, onDone) {
+    clearTimeout(batonTimer);
+    batonSceneMessage.textContent = message;
+    batonScene.hidden = false;
+    const finish = () => {
+      clearTimeout(batonTimer);
+      batonScene.hidden = true;
+      skipBatonScene.onclick = null;
+      onDone?.();
+    };
+    skipBatonScene.onclick = finish;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) finish();
+    else batonTimer = setTimeout(finish, 1250);
+  }
 
   function showToast(message) {
     toast.textContent = message;
@@ -67,6 +372,41 @@
     return 30 / tempo;
   }
 
+  function stepForSeed(seed) {
+    return Math.min(7, Math.floor(seed.x * 8));
+  }
+
+  function areTupletNeighbors(a, b) {
+    if (stepForSeed(a) !== stepForSeed(b)) return false;
+    return Math.hypot((a.x - b.x) * 1.2, a.y - b.y) < .105;
+  }
+
+  function buildTupletClusters(stepSeeds) {
+    const waiting = [...stepSeeds];
+    const clusters = [];
+    while (waiting.length) {
+      const cluster = [waiting.shift()];
+      for (let index = 0; index < cluster.length; index += 1) {
+        for (let candidate = waiting.length - 1; candidate >= 0; candidate -= 1) {
+          if (areTupletNeighbors(cluster[index], waiting[candidate])) {
+            cluster.push(waiting[candidate]);
+            waiting.splice(candidate, 1);
+          }
+        }
+      }
+      clusters.push(cluster);
+    }
+    return clusters;
+  }
+
+  function forEachTupletSeed(stepSeeds, baseTime, tempo, callback) {
+    buildTupletClusters(stepSeeds).forEach(cluster => {
+      const ordered = [...cluster].sort((a, b) => a.y - b.y || a.id - b.id);
+      const spacing = cluster.length > 1 ? secondsPerStep(tempo) * .68 / cluster.length : 0;
+      ordered.forEach((seed, index) => callback(seed, baseTime + spacing * index));
+    });
+  }
+
   function tempoFeeling(tempo) {
     if (tempo < 72) return "ゆっくり";
     if (tempo > 124) return "はやい";
@@ -77,6 +417,326 @@
     bpmValue.textContent = `${bpm} BPM`;
     bpmSlider.setAttribute("aria-valuetext", `${tempoFeeling(bpm)} ${bpm} BPM`);
     garden.style.setProperty("--step-motion", `${Math.min(0.42, secondsPerStep() * 0.72)}s`);
+  }
+
+  function setResidentActions(actions) {
+    residentActions.replaceChildren();
+    actions.forEach(({ label, kind = "", onClick, disabled = false }) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `resident-action ${kind}`.trim();
+      button.textContent = label;
+      button.disabled = disabled;
+      if (onClick) button.addEventListener("click", onClick);
+      residentActions.appendChild(button);
+    });
+  }
+
+  function showResidentBubble(resident, message, actions) {
+    residentSession = resident;
+    residentBubble.dataset.resident = resident;
+    residentBubbleIcon.textContent = resident === "fairy" ? "🧚" : "🧑‍🌾";
+    residentBubbleName.textContent = resident === "fairy" ? "妖精さん" : "こびとさん";
+    residentBubbleMessage.textContent = message;
+    setResidentActions(actions);
+    residentBubble.hidden = false;
+    fairyButton.setAttribute("aria-expanded", String(resident === "fairy"));
+    gnomeButton.setAttribute("aria-expanded", String(resident === "gnome"));
+  }
+
+  function hideSuggestionGlow() {
+    suggestionGlow.hidden = true;
+  }
+
+  function showSuggestionGlow(x, y) {
+    suggestionGlow.style.left = `${x * 100}%`;
+    suggestionGlow.style.top = `${y * 100}%`;
+    suggestionGlow.hidden = false;
+  }
+
+  function closeResidentBubble(force = false) {
+    if (!force && residentChangePending) {
+      showToast("元に戻すか、このままにするか選んでね");
+      return false;
+    }
+    if (!force && residentWorkTimer) {
+      showToast("こびとさんがお仕事中だよ");
+      return false;
+    }
+    clearTimeout(residentWorkTimer);
+    residentWorkTimer = null;
+    residentChangePending = false;
+    residentBubble.hidden = true;
+    fairyButton.setAttribute("aria-expanded", "false");
+    gnomeButton.setAttribute("aria-expanded", "false");
+    fairyButton.classList.remove("working");
+    gnomeButton.classList.remove("working");
+    hideSuggestionGlow();
+    residentSession = null;
+    pendingFairySuggestion = null;
+    fairyAddedSeed = null;
+    gnomeProposal = null;
+    gnomeSnapshot = null;
+    return true;
+  }
+
+  function findQuietSpot(preferredY) {
+    const gardenSeeds = activeSeeds();
+    const yChoices = [preferredY, Math.max(.1, preferredY - .17), Math.min(.88, preferredY + .17)];
+    const candidates = [];
+    for (let step = 0; step < 8; step += 1) {
+      yChoices.forEach(y => candidates.push({ x: (step + .5) / 8, y }));
+    }
+    if (gardenSeeds.length === 0) return candidates[2];
+    return candidates.reduce((best, candidate) => {
+      const nearest = Math.min(...gardenSeeds.map(seed => Math.hypot((candidate.x - seed.x) * 1.25, candidate.y - seed.y)));
+      const sameStep = gardenSeeds.filter(seed => Math.floor(seed.x * 8) === Math.floor(candidate.x * 8)).length;
+      const score = nearest - sameStep * .055;
+      return !best || score > best.score ? { ...candidate, score } : best;
+    }, null);
+  }
+
+  function buildFairySuggestion(index) {
+    const templates = [
+      { type: "sparkle", y: .22, message: "ここに光る音を一粒、置いてみる？", placed: "きらきらを一粒だけ、そっと置いたよ" },
+      { type: "fluffy", y: .44, message: "ここにやさしい空気を一粒、置いてみる？", placed: "ふわふわを一粒だけ、そっと置いたよ" },
+      { type: "sparkle", y: .34, message: "もう少し明るい雰囲気にしてみる？", placed: "明るい音を一粒だけ、添えたよ" },
+      { type: "fluffy", y: .27, message: "もう少し夢みたいにしてみる？", placed: "夢みたいな音を一粒だけ、添えたよ" },
+      { type: null, y: .57, message: "このあたりが少し寂しそう。光で場所だけ見てみる？", placed: "ここが次のひらめきになりそう。何も変えていないよ" },
+    ];
+    const template = templates[index % templates.length];
+    const spot = findQuietSpot(template.y);
+    return { ...template, index: index % templates.length, x: spot.x, y: spot.y, previewOnly: !template.type };
+  }
+
+  function finishFairyChoice() {
+    residentChangePending = false;
+    closeResidentBubble();
+    showToast("妖精さんは葉っぱの陰へ戻ったよ");
+  }
+
+  function undoFairySeed() {
+    if (fairyAddedSeed && seeds.includes(fairyAddedSeed)) removeSeed(fairyAddedSeed, false);
+    residentChangePending = false;
+    fairyAddedSeed = null;
+    showResidentBubble("fairy", "元のお庭に戻したよ。今のままでも、とっても素敵だよ", [
+      { label: "ありがとう", kind: "primary", onClick: finishFairyChoice },
+    ]);
+  }
+
+  function placeFairySuggestion() {
+    if (!pendingFairySuggestion) return;
+    fairySuggestionCursor = (pendingFairySuggestion.index + 1) % 5;
+    if (pendingFairySuggestion.previewOnly) {
+      showSuggestionGlow(pendingFairySuggestion.x, pendingFairySuggestion.y);
+      showResidentBubble("fairy", pendingFairySuggestion.placed, [
+        { label: "ありがとう", kind: "primary", onClick: () => closeResidentBubble() },
+      ]);
+      return;
+    }
+    fairyButton.classList.add("working");
+    setTimeout(() => fairyButton.classList.remove("working"), 520);
+    fairyAddedSeed = addSeed(pendingFairySuggestion.type, pendingFairySuggestion.x, pendingFairySuggestion.y, activeSectionIndex, { source: "fairy" });
+    hideSuggestionGlow();
+    if (!fairyAddedSeed) return;
+    fairyAddedSeed.el.classList.add("resident-adjusted");
+    setTimeout(() => fairyAddedSeed?.el?.classList.remove("resident-adjusted"), 600);
+    residentChangePending = true;
+    showResidentBubble("fairy", pendingFairySuggestion.placed, [
+      { label: "元に戻す", onClick: undoFairySeed },
+      { label: "このまま育てる", kind: "primary", onClick: finishFairyChoice },
+    ]);
+  }
+
+  function showFairySuggestion(index) {
+    pendingFairySuggestion = buildFairySuggestion(index);
+    fairySuggestionCursor = pendingFairySuggestion.index;
+    showSuggestionGlow(pendingFairySuggestion.x, pendingFairySuggestion.y);
+    showResidentBubble("fairy", pendingFairySuggestion.message, [
+      { label: "置いてみる", kind: "primary", onClick: placeFairySuggestion },
+      { label: "ちがうのを見る", onClick: () => showFairySuggestion((fairySuggestionCursor + 1) % 5) },
+      { label: "やめておく", kind: "quiet", onClick: () => {
+        closeResidentBubble();
+        showToast("今のままでも、とっても素敵だよ");
+      } },
+    ]);
+  }
+
+  function askFairy() {
+    if (residentChangePending || residentWorkTimer) {
+      showToast("先に今のお手伝いを決めてね");
+      return;
+    }
+    fairyButton.classList.add("working");
+    setTimeout(() => fairyButton.classList.remove("working"), 460);
+    let startIndex = fairySuggestionCursor;
+    if (activeSection()?.locked) {
+      showToast("このお庭は前の庭師さんから預かっているよ");
+      return;
+    }
+    if (!activeSeeds().some(seed => seed.type === "sparkle")) startIndex = 0;
+    else if (!activeSeeds().some(seed => seed.type === "fluffy")) startIndex = 1;
+    showFairySuggestion(startIndex);
+  }
+
+  function snapshotGarden(selectedSeeds = activeSeeds()) {
+    return selectedSeeds.map(seed => ({ id: seed.id, x: seed.x, y: seed.y, size: seed.size, source: seed.source }));
+  }
+
+  function buildGnomeProposal() {
+    if (activeSection()?.locked) return null;
+    const gardenSeeds = activeSeeds();
+    if (gardenSeeds.length === 0) return null;
+    const stepFor = seed => Math.min(7, Math.floor(seed.x * 8));
+    const stepCounts = Array.from({ length: 8 }, (_, step) => gardenSeeds.filter(seed => stepFor(seed) === step).length);
+    const loudSeeds = gardenSeeds.filter(seed => seed.size === 3 && !seed.tuplet);
+    const loudPair = loudSeeds.find(seed => loudSeeds.some(other => other !== seed && stepFor(other) === stepFor(seed)));
+    if (loudSeeds.length >= 4 || loudPair) {
+      const seed = loudPair || loudSeeds[0];
+      return {
+        message: "大きな音が少し重なっているみたい。ひと粒だけ小さくする？",
+        done: "大きな音をひと粒だけ、小さくしたよ",
+        change: { seed, after: { size: 2 } },
+      };
+    }
+
+    let crowdedPair = null;
+    for (let first = 0; first < gardenSeeds.length && !crowdedPair; first += 1) {
+      for (let second = first + 1; second < gardenSeeds.length; second += 1) {
+        const a = gardenSeeds[first];
+        const b = gardenSeeds[second];
+        if (stepFor(a) === stepFor(b) && Math.abs(a.y - b.y) < .15 && !a.tuplet && !b.tuplet) {
+          crowdedPair = [a, b];
+          break;
+        }
+      }
+    }
+    if (crowdedPair) {
+      const seed = crowdedPair[1];
+      const currentStep = stepFor(seed);
+      const neighborSteps = [currentStep - 1, currentStep + 1].filter(step => step >= 0 && step <= 7);
+      const targetStep = neighborSteps.sort((a, b) => stepCounts[a] - stepCounts[b])[0];
+      if (targetStep !== undefined) {
+        return {
+          message: "ここがぎゅうぎゅうみたい。ひと粒だけ隣へ動かす？",
+          done: "重なっていた音を、ひと粒だけ隣へ動かしたよ",
+          change: { seed, after: { x: (targetStep + .5) / 8 } },
+        };
+      }
+    }
+
+    const lowSeeds = gardenSeeds.filter(seed => !seed.tuplet && (seed.type === "grainy" || seed.y > .78));
+    const lowSeedToSoften = lowSeeds.find(seed => seed.size > 1);
+    if (lowSeeds.length >= 4 && lowSeedToSoften) {
+      return {
+        message: "低い音が少し集まっているみたい。ひと粒だけ小さくする？",
+        done: "低い音をひと粒だけ、やさしく整えたよ",
+        change: { seed: lowSeedToSoften, after: { size: lowSeedToSoften.size - 1 } },
+      };
+    }
+
+    const timingSeed = gardenSeeds.find(seed => {
+      if (seed.tuplet) return false;
+      const center = (stepFor(seed) + .5) / 8;
+      const distance = Math.abs(seed.x - center);
+      return distance > .025 && distance < .056;
+    });
+    if (timingSeed) {
+      return {
+        message: "ひと粒だけ、小道から少し外れているみたい。近くへ並べる？",
+        done: "ひと粒だけ、近くの小道へそっと並べたよ",
+        change: { seed: timingSeed, after: { x: (stepFor(timingSeed) + .5) / 8 } },
+      };
+    }
+    return null;
+  }
+
+  function finishGnomeChoice() {
+    residentChangePending = false;
+    closeResidentBubble();
+    showToast("こびとさんは小屋へ戻ったよ");
+  }
+
+  function undoGnomeWork() {
+    if (gnomeSnapshot) {
+      const previous = new Map(gnomeSnapshot.map(state => [state.id, state]));
+      seeds.forEach(seed => {
+        const state = previous.get(seed.id);
+        if (!state) return;
+        seed.x = state.x;
+        seed.y = state.y;
+        seed.size = state.size;
+        seed.source = state.source;
+        updateSeedElement(seed);
+        seed.el.classList.add("resident-adjusted");
+        setTimeout(() => seed.el?.classList.remove("resident-adjusted"), 580);
+      });
+    }
+    residentChangePending = false;
+    showResidentBubble("gnome", "元のお庭に戻したよ。大切な種はそのままだよ", [
+      { label: "ありがとう", kind: "primary", onClick: finishGnomeChoice },
+    ]);
+  }
+
+  function applyGnomeProposal() {
+    if (!gnomeProposal?.change?.seed || !seeds.includes(gnomeProposal.change.seed)) {
+      showResidentBubble("gnome", "今日はお仕事なし。きれいなお庭だよ", [
+        { label: "ありがとう", kind: "primary", onClick: () => closeResidentBubble() },
+      ]);
+      return;
+    }
+    gnomeSnapshot = snapshotGarden([gnomeProposal.change.seed]);
+    gnomeButton.classList.add("working");
+    showResidentBubble("gnome", "とんとん…少しだけ整えているよ", [
+      { label: "お仕事中…", disabled: true },
+    ]);
+    residentWorkTimer = setTimeout(() => {
+      residentWorkTimer = null;
+      gnomeButton.classList.remove("working");
+      const { seed, after } = gnomeProposal.change;
+      if (!seeds.includes(seed)) {
+        residentChangePending = false;
+        showResidentBubble("gnome", "今日はお仕事なし。きれいなお庭だよ", [
+          { label: "ありがとう", kind: "primary", onClick: () => closeResidentBubble() },
+        ]);
+        return;
+      }
+      if (after.x !== undefined) seed.x = after.x;
+      if (after.y !== undefined) seed.y = after.y;
+      if (after.size !== undefined) seed.size = after.size;
+      seed.source = "gnome";
+      updateSeedElement(seed);
+      seed.el.classList.add("resident-adjusted");
+      setTimeout(() => seed.el?.classList.remove("resident-adjusted"), 580);
+      residentChangePending = true;
+      showResidentBubble("gnome", gnomeProposal.done, [
+        { label: "元に戻す", onClick: undoGnomeWork },
+        { label: "今のままにする", kind: "primary", onClick: finishGnomeChoice },
+      ]);
+    }, 620);
+  }
+
+  function askGnome() {
+    if (residentChangePending || residentWorkTimer) {
+      showToast("先に今のお手伝いを決めてね");
+      return;
+    }
+    hideSuggestionGlow();
+    gnomeProposal = buildGnomeProposal();
+    if (!gnomeProposal) {
+      showResidentBubble("gnome", "今日はお仕事なし。きれいなお庭だよ", [
+        { label: "ありがとう", kind: "primary", onClick: () => closeResidentBubble() },
+      ]);
+      return;
+    }
+    showResidentBubble("gnome", gnomeProposal.message, [
+      { label: "整えてもらう", kind: "primary", onClick: applyGnomeProposal },
+      { label: "元に戻す", disabled: true },
+      { label: "今のままにする", kind: "quiet", onClick: () => {
+        closeResidentBubble();
+        showToast("今のお庭を大切にするね");
+      } },
+    ]);
   }
 
   function ensureAudio() {
@@ -367,11 +1027,18 @@
       }
     };
 
+    const sectionCount = Math.max(1, ...seedSnapshot.map(seed => (seed.section || 0) + 1));
+    const totalSteps = sectionCount * 8;
     for (let stepIndex = 0, time = 0.06; time < duration; stepIndex += 1, time += secondsPerStep(tempo)) {
-      const step = stepIndex % 8;
-      seedSnapshot
-        .filter(seed => Math.min(7, Math.floor(seed.x * 8)) === step)
-        .forEach(seed => playRenderedSeed(seed, time));
+      const globalStep = stepIndex % totalSteps;
+      const section = Math.floor(globalStep / 8);
+      const step = globalStep % 8;
+      forEachTupletSeed(
+        seedSnapshot.filter(seed => (seed.section || 0) === section && stepForSeed(seed) === step),
+        time,
+        tempo,
+        playRenderedSeed,
+      );
     }
     const rendered = await context.startRendering();
     return new Float32Array(rendered.getChannelData(0));
@@ -421,7 +1088,7 @@
     recordingSilence.connect(audio.destination);
     recording = true;
     setRecordButton(true);
-    if (!isPlaying) startPlayback(true);
+    if (!isPlaying) startPlayback({ quiet: true, follow: true });
     showToast("録音を始めたよ ●");
   }
 
@@ -437,7 +1104,7 @@
     const finishedChunks = recordingChunks;
     recordingChunks = [];
     const duration = Math.max(0.35, audio.currentTime - recordingStartedAt);
-    const seedSnapshot = seeds.map(({ type, x, y, size }) => ({ type, x, y, size }));
+    const seedSnapshot = seeds.map(({ id, type, x, y, size, section }) => ({ id, type, x, y, size, section }));
     const recordingTempo = bpm;
     setRecordButton(false);
     recordingFinishing = true;
@@ -453,6 +1120,58 @@
       await navigator.share({ title: "音庭で生まれた曲", files: [file] });
     } catch (error) {
       if (error?.name !== "AbortError") showToast("共有できませんでした");
+    }
+  }
+
+  function downloadBaton() {
+    const author = gardenerLabel(relayHistory.length);
+    sections.forEach(section => { if (!section.author) section.author = author; });
+    const last = relayHistory.at(-1);
+    if (!last || last.gardener !== author || last.sections !== sections.length) {
+      relayHistory.push({ gardener: author, at: new Date().toISOString(), sections: sections.length });
+    }
+    renderRelayHistory();
+    renderGardenMap();
+    const data = serializeGarden();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `otoniwa-baton-${new Date().toISOString().slice(0, 10)}.json`;
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    queueSessionSave();
+    showToast("次の庭師さんへ、音のバトンができたよ");
+  }
+
+  function passBaton() {
+    if (!seeds.length) {
+      showToast("バトンに入れる音の種を、ひと粒置いてね");
+      return;
+    }
+    showBatonScene("音の種を大切に包んでいるよ…");
+    downloadBaton();
+  }
+
+  async function receiveBaton(file) {
+    if (!file) return;
+    receiveBatonInput.value = "";
+    if (file.size > 1024 * 1024) {
+      showToast("この音のバトンは大きすぎるみたい");
+      return;
+    }
+    try {
+      const text = await file.text();
+      const data = normalizeGardenData(JSON.parse(text));
+      showBatonScene("音の種袋をひらいているよ…", () => {
+        replaceGardenFromData(data, { received: true });
+        showToast("前のお庭の先に、続きを育てる場所がひらいたよ");
+      });
+    } catch (error) {
+      showToast(error instanceof SyntaxError ? "このファイルは音のバトンではないみたい" : error.message || "音のバトンを開けませんでした");
     }
   }
 
@@ -687,12 +1406,35 @@
     animateSeed(seed, (time - audio.currentTime) * 1000);
   }
 
-  function scheduleStep(step, time) {
+  function scheduleStep(globalStep, time) {
+    const section = Math.floor(globalStep / 8);
+    const step = globalStep % 8;
     const delay = Math.max(0, (time - audio.currentTime) * 1000);
     setTimeout(() => {
-      if (isPlaying) playhead.style.transform = `translateX(${step * 100}%)`;
+      if (!isPlaying) return;
+      const target = sectionElement(section);
+      if (target && playhead.parentElement !== target) target.appendChild(playhead);
+      playhead.style.transform = `translateX(${step * 100}%)`;
+      [...gardenMap.children].forEach((el, index) => el.classList.toggle("playing", index === section));
+      if (followPlayback && !isManipulating && section !== activeSectionIndex && Date.now() > userInteractingUntil) {
+        activeSectionIndex = section;
+        renderGardenMap();
+        [...gardenMap.children].forEach((el, index) => el.classList.toggle("playing", index === section));
+        programmaticScrollUntil = Date.now() + 700;
+        target?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+      }
     }, delay);
-    seeds.filter(seed => Math.min(7, Math.floor(seed.x * 8)) === step).forEach(seed => trigger(seed, time));
+    forEachTupletSeed(
+      seeds.filter(seed => seed.section === section && stepForSeed(seed) === step),
+      time,
+      bpm,
+      trigger,
+    );
+  }
+
+  function playbackStepCount() {
+    const lastPlantedSection = seeds.reduce((last, seed) => Math.max(last, seed.section), -1);
+    return Math.max(8, (lastPlantedSection + 1) * 8);
   }
 
   function schedulerTick() {
@@ -700,15 +1442,24 @@
     while (nextStepTime < audio.currentTime + scheduleAhead) {
       scheduleStep(currentStep, nextStepTime);
       nextStepTime += secondsPerStep();
-      currentStep = (currentStep + 1) % 8;
+      currentStep = (currentStep + 1) % playbackStepCount();
     }
   }
 
-  function startPlayback(silent = false) {
+  function startPlayback({ quiet = false, follow = false, from = playbackStartMode } = {}) {
     if (!ensureAudio()) return;
     if (isPlaying) return;
     isPlaying = true;
-    currentStep = 0;
+    followPlayback = follow;
+    const lastPlayableSectionStart = Math.max(0, playbackStepCount() - 8);
+    currentStep = from === "start" ? 0 : Math.min(activeSectionIndex * 8, lastPlayableSectionStart);
+    if (follow) {
+      const startSection = Math.floor(currentStep / 8);
+      activeSectionIndex = startSection;
+      renderGardenMap();
+      programmaticScrollUntil = Date.now() + 700;
+      sectionElement(startSection)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+    }
     nextStepTime = audio.currentTime + 0.06;
     master.gain.cancelScheduledValues(audio.currentTime);
     master.gain.setValueAtTime(0.0001, audio.currentTime);
@@ -718,11 +1469,13 @@
     garden.classList.add("playing");
     playButton.setAttribute("aria-pressed", "true");
     playButton.innerHTML = '<span aria-hidden="true">♫</span><span>再生中</span>';
-    if (!silent && seeds.length === 0) showToast("種を置くと、ここから音が育つよ");
+    if (!quiet && seeds.length === 0) showToast("種を置くと、ここから音が育つよ");
   }
 
   function stopPlayback() {
     isPlaying = false;
+    followPlayback = false;
+    isManipulating = false;
     clearInterval(scheduler);
     scheduler = null;
     if (audio && master) {
@@ -734,6 +1487,7 @@
     playButton.setAttribute("aria-pressed", "false");
     playButton.innerHTML = '<span aria-hidden="true">▶</span><span>再生</span>';
     playhead.style.transform = "translateX(0)";
+    [...gardenMap.children].forEach(el => el.classList.remove("playing"));
   }
 
   function stopEverything() {
@@ -741,28 +1495,56 @@
     stopPlayback();
   }
 
-  function positionFromPoint(clientX, clientY) {
-    const rect = garden.getBoundingClientRect();
+  function positionFromPoint(clientX, clientY, targetSection = sectionElement(activeSectionIndex)) {
+    const rect = targetSection.getBoundingClientRect();
     return {
       x: Math.max(0.035, Math.min(0.965, (clientX - rect.left) / rect.width)),
       y: Math.max(0.055, Math.min(0.945, (clientY - rect.top) / rect.height)),
     };
   }
 
+  function sectionFromPoint(clientX, clientY) {
+    return document.elementFromPoint(clientX, clientY)?.closest?.(".garden-section") || null;
+  }
+
+  function refreshTupletGroups() {
+    seeds.forEach(seed => {
+      seed.tuplet = false;
+      seed.el.classList.remove("tuplet");
+    });
+    sections.forEach((_, section) => {
+      for (let step = 0; step < 8; step += 1) {
+        buildTupletClusters(seeds.filter(seed => seed.section === section && stepForSeed(seed) === step))
+          .filter(cluster => cluster.length > 1)
+          .forEach(cluster => cluster.forEach(seed => {
+            seed.tuplet = true;
+            seed.el.classList.add("tuplet");
+          }));
+      }
+    });
+    seeds.forEach(seed => {
+      const tupletMessage = seed.tuplet ? "。近くの種と連符で鳴ります" : "";
+      seed.el.setAttribute("aria-label", `${kinds[seed.type].label}。大きさ${seed.size}。ドラッグで移動、押すと大きさ変更、長押しで消せます${tupletMessage}`);
+    });
+  }
+
   function updateSeedElement(seed) {
     seed.el.style.left = `${seed.x * 100}%`;
     seed.el.style.top = `${seed.y * 100}%`;
     seed.el.style.setProperty("--size", [0.82, 1, 1.2][seed.size - 1]);
-    seed.el.setAttribute("aria-label", `${kinds[seed.type].label}。大きさ${seed.size}。ドラッグで移動、押すと大きさ変更、長押しで消せます`);
+    refreshTupletGroups();
+    queueSessionSave();
   }
 
-  function removeSeed(seed) {
+  function removeSeed(seed, announce = true) {
     const index = seeds.indexOf(seed);
     if (index < 0) return;
     seeds.splice(index, 1);
     seed.el.remove();
-    if (seeds.length === 0) emptyHint.classList.remove("hidden");
-    showToast(`${kinds[seed.type].label}の種を摘んだよ`);
+    refreshTupletGroups();
+    updateEmptyHints();
+    queueSessionSave();
+    if (announce) showToast(`${kinds[seed.type].label}の種を摘んだよ`);
   }
 
   function attachPlacedSeedGestures(seed) {
@@ -780,6 +1562,11 @@
     };
 
     seed.el.addEventListener("pointerdown", event => {
+      if (sections[seed.section]?.locked) {
+        showToast("前の庭師さんの音は、そのまま聴けるよ");
+        return;
+      }
+      isManipulating = true;
       event.preventDefault();
       moved = false;
       longPressed = false;
@@ -806,14 +1593,17 @@
         cancelLongPress();
       }
       if (moved) {
+        const wasTuplet = seed.tuplet;
         const point = positionFromPoint(event.clientX, event.clientY);
         seed.x = point.x;
         seed.y = point.y;
         updateSeedElement(seed);
+        if (!wasTuplet && seed.tuplet) showToast("重なった種が、ころころ連符になったよ");
       }
     });
 
     seed.el.addEventListener("pointerup", event => {
+      isManipulating = false;
       cancelLongPress();
       if (seed.el.hasPointerCapture(event.pointerId)) seed.el.releasePointerCapture(event.pointerId);
       seed.el.classList.remove("moving");
@@ -821,6 +1611,7 @@
     });
 
     seed.el.addEventListener("pointercancel", () => {
+      isManipulating = false;
       cancelLongPress();
       seed.el.classList.remove("moving");
     });
@@ -862,27 +1653,46 @@
     });
   }
 
-  function addSeed(type, x, y) {
-    if (!kinds[type]) return;
+  function addSeed(type, x, y, section = activeSectionIndex, options = {}) {
+    if (!kinds[type]) return null;
+    if (!sections[section] || (sections[section].locked && !options.allowLocked)) {
+      if (!options.quiet) showToast("前の庭師さんのお庭は大切に残しているよ");
+      return null;
+    }
+    if (seeds.length >= MAX_SEEDS) {
+      showToast("音の種はここまで育ったよ");
+      return null;
+    }
     const el = document.createElement("button");
     el.type = "button";
     el.className = `placed-seed ${type}`;
     el.textContent = kinds[type].icon;
-    const seed = { id: nextId++, type, x, y, size: 2, el };
+    const seed = { id: options.id ?? nextId++, type, x, y, size: options.size ?? 2, section, source: options.source || "user", el };
+    nextId = Math.max(nextId, seed.id + 1);
     seeds.push(seed);
     updateSeedElement(seed);
     attachPlacedSeedGestures(seed);
-    garden.appendChild(el);
-    emptyHint.classList.add("hidden");
-    if (!isPlaying) startPlayback(true);
+    sectionElement(section)?.appendChild(el);
+    updateEmptyHints();
+    if (options.quiet) return seed;
+    if (!isPlaying) startPlayback({ quiet: true, follow: false, from: "here" });
     else if (ensureAudio()) trigger(seed, audio.currentTime + 0.02);
+    return seed;
   }
 
   function clearGarden() {
+    cancelPendingSeed();
+    closeResidentBubble(true);
     stopEverything();
-    seeds.splice(0).forEach(seed => seed.el.remove());
-    emptyHint.classList.remove("hidden");
-    showToast("お庭をまっさらにしたよ");
+    const removable = seeds.filter(seed => !sections[seed.section]?.locked);
+    removable.forEach(seed => {
+      const index = seeds.indexOf(seed);
+      if (index >= 0) seeds.splice(index, 1);
+      seed.el.remove();
+    });
+    updateEmptyHints();
+    queueSessionSave();
+    showToast(removable.length ? "育てていたお庭をまっさらにしたよ" : "預かったお庭はそのまま大切に残っているよ");
   }
 
   seedCards.forEach(card => {
@@ -895,12 +1705,13 @@
     });
     card.addEventListener("dragend", () => {
       card.classList.remove("dragging");
-      garden.classList.remove("drag-over");
+      gardenTrack.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
       dragType = null;
     });
 
     card.addEventListener("pointerdown", event => {
       event.preventDefault();
+      isManipulating = true;
       dragType = card.dataset.seed;
       card.classList.add("dragging");
       pointerGhost = card.querySelector(".seed-icon").cloneNode(true);
@@ -915,19 +1726,22 @@
       if (!pointerGhost) return;
       pointerGhost.style.left = `${event.clientX - 22}px`;
       pointerGhost.style.top = `${event.clientY - 22}px`;
-      const rect = garden.getBoundingClientRect();
-      garden.classList.toggle("drag-over", event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom);
+      const target = sectionFromPoint(event.clientX, event.clientY);
+      gardenTrack.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
+      if (target && !sections[Number(target.dataset.sectionIndex)]?.locked) target.classList.add("drag-over");
     });
     card.addEventListener("pointerup", event => {
+      isManipulating = false;
       if (!pointerGhost) return;
-      const rect = garden.getBoundingClientRect();
-      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) {
-        const point = positionFromPoint(event.clientX, event.clientY);
-        addSeed(dragType, point.x, point.y);
+      const target = sectionFromPoint(event.clientX, event.clientY);
+      if (target) {
+        const section = Number(target.dataset.sectionIndex);
+        const point = positionFromPoint(event.clientX, event.clientY, target);
+        addSeed(dragType, point.x, point.y, section);
         suppressClick = true;
       }
       pointerGhost.remove(); pointerGhost = null;
-      card.classList.remove("dragging"); garden.classList.remove("drag-over"); dragType = null;
+      card.classList.remove("dragging"); gardenTrack.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over")); dragType = null;
     });
 
     card.addEventListener("click", () => {
@@ -936,31 +1750,72 @@
         return;
       }
       if (dragType || pointerGhost) return;
-      const count = seeds.filter(seed => seed.type === card.dataset.seed).length;
+      const count = activeSeeds().filter(seed => seed.type === card.dataset.seed).length;
       addSeed(card.dataset.seed, 0.18 + (count % 4) * 0.2, 0.25 + ((count * 0.21) % 0.5));
     });
   });
 
-  garden.addEventListener("dragover", event => {
+  garden.addEventListener("wheel", event => {
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-    garden.classList.add("drag-over");
+    userInteractingUntil = Date.now() + 900;
+    garden.scrollLeft += event.deltaY;
+  }, { passive: false });
+  garden.addEventListener("pointerdown", event => {
+    if (!event.target.closest(".placed-seed")) userInteractingUntil = Date.now() + 1200;
+    if (!event.target.closest(".seed-basket") && !seedBasketPanel.hidden) closeSeedBasket();
+    if (pendingSeedType
+        && !event.target.closest(".placed-seed")
+        && !event.target.closest(".resident")
+        && !event.target.closest(".seed-basket")) {
+      gardenTapId = event.pointerId;
+      gardenTapStartX = event.clientX;
+      gardenTapStartY = event.clientY;
+    }
   });
-  garden.addEventListener("dragleave", event => {
-    if (!garden.contains(event.relatedTarget)) garden.classList.remove("drag-over");
-  });
-  garden.addEventListener("drop", event => {
-    event.preventDefault();
-    const type = event.dataTransfer.getData("text/plain") || dragType;
-    const point = positionFromPoint(event.clientX, event.clientY);
-    garden.classList.remove("drag-over");
-    addSeed(type, point.x, point.y);
-  });
+  garden.addEventListener("scroll", () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      if (Date.now() < programmaticScrollUntil) return;
+      const index = Math.round(garden.scrollLeft / Math.max(1, garden.clientWidth));
+      if (index !== activeSectionIndex) {
+        activeSectionIndex = Math.max(0, Math.min(sections.length - 1, index));
+        renderGardenMap();
+      }
+    }, 80);
+  }, { passive: true });
 
-  playButton.addEventListener("click", () => isPlaying ? stopEverything() : startPlayback());
+  playButton.addEventListener("click", () => {
+    if (isPlaying) { stopEverything(); } else { startPlayback({ follow: true }); }
+  });
   stopButton.addEventListener("click", stopEverything);
   recordButton.addEventListener("click", () => isRecording() ? stopRecording() : startRecording());
   clearButton.addEventListener("click", clearGarden);
+  fairyButton.addEventListener("click", askFairy);
+  gnomeButton.addEventListener("click", askGnome);
+  extendGardenButton.addEventListener("click", () => addSection({ author: gardenerName.value.trim().slice(0, 30) }));
+  unlockSectionButton.addEventListener("click", () => {
+    const section = activeSection();
+    if (!section?.locked) return;
+    section.locked = false;
+    renderSections();
+    showToast("このお庭にも、そっと手を加えられるようになったよ");
+    queueSessionSave();
+  });
+  listenFromStart.addEventListener("click", () => {
+    playbackStartMode = "start";
+    listenFromStart.classList.add("active");
+    listenFromHere.classList.remove("active");
+    showToast("次は、はじめのお庭から聴くよ");
+  });
+  listenFromHere.addEventListener("click", () => {
+    playbackStartMode = "here";
+    listenFromHere.classList.add("active");
+    listenFromStart.classList.remove("active");
+    showToast("次は、今見ているお庭から聴くよ");
+  });
+  passBatonButton.addEventListener("click", passBaton);
+  receiveBatonInput.addEventListener("change", () => receiveBaton(receiveBatonInput.files?.[0]));
   bpmSlider.addEventListener("input", () => {
     bpm = Number(bpmSlider.value);
     updateTempoDisplay();
@@ -977,12 +1832,147 @@
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && (isPlaying || isRecording())) stopEverything();
   });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      if (residentSession) closeResidentBubble();
+      if (pendingSeedType) cancelPendingSeed();
+    }
+  });
   window.addEventListener("beforeunload", () => {
     stopRecording();
     if (recordingUrl) URL.revokeObjectURL(recordingUrl);
   });
 
-  updateTempoDisplay();
+  // ── Seed basket: portrait-mobile tap-to-plant ──
+  function updateSeedBasketVisibility() {
+    seedBasketFrame = null;
+    const portraitMobile = window.matchMedia("(max-width: 760px) and (orientation: portrait)").matches;
+    const gardenRect = garden.getBoundingClientRect();
+    const trayRect = seedTray.getBoundingClientRect();
+    const gardenIsVisible = gardenRect.bottom > 80 && gardenRect.top < window.innerHeight - 56;
+    const seedTrayHasGone = trayRect.bottom < 180;
+    const shouldShow = portraitMobile && gardenIsVisible && seedTrayHasGone;
+
+    seedBasket.classList.toggle("is-visible", shouldShow);
+    seedBasket.setAttribute("aria-hidden", String(!shouldShow));
+    if (!shouldShow) closeSeedBasket();
+  }
+
+  function queueSeedBasketVisibility() {
+    if (seedBasketFrame !== null) return;
+    seedBasketFrame = requestAnimationFrame(updateSeedBasketVisibility);
+  }
+
+  function openSeedBasket() {
+    seedBasketPanel.hidden = false;
+    seedBasketBtn.setAttribute("aria-expanded", "true");
+  }
+  function closeSeedBasket() {
+    seedBasketPanel.hidden = true;
+    seedBasketBtn.setAttribute("aria-expanded", "false");
+  }
+  function selectPendingSeed(type) {
+    pendingSeedType = type;
+    closeSeedBasket();
+    const k = kinds[type];
+    seedPendingDisplay.textContent = `${k.icon} ${k.label}`;
+    seedPendingBar.hidden = false;
+    seedBasketBtn.hidden = true;
+    seedBasketPanel.querySelectorAll(".basket-panel-seed").forEach(btn =>
+      btn.classList.toggle("selected", btn.dataset.seed === type));
+    showToast("庭をタップして種を植えよう");
+  }
+  function cancelPendingSeed() {
+    if (!pendingSeedType && seedBasketPanel.hidden && seedPendingBar.hidden) return;
+    pendingSeedType = null;
+    gardenTapId = null;
+    seedPendingBar.hidden = true;
+    seedBasketBtn.hidden = false;
+    closeSeedBasket();
+    seedBasketPanel.querySelectorAll(".basket-panel-seed").forEach(btn =>
+      btn.classList.remove("selected"));
+  }
+
+  seedBasketBtn.addEventListener("click", () => {
+    if (seedBasketPanel.hidden) openSeedBasket(); else closeSeedBasket();
+  });
+  seedBasketPanel.querySelectorAll(".basket-panel-seed").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (pendingSeedType === btn.dataset.seed) cancelPendingSeed();
+      else selectPendingSeed(btn.dataset.seed);
+    });
+  });
+  seedPendingCancel.addEventListener("click", event => {
+    event.stopPropagation();
+    cancelPendingSeed();
+  });
+  // Tapping the display label reopens the panel to change seed
+  seedPendingDisplay.addEventListener("click", () => {
+    seedPendingBar.hidden = true;
+    seedBasketBtn.hidden = false;
+    openSeedBasket();
+  });
+
+  // Garden tap-to-plant gesture
+  garden.addEventListener("pointermove", event => {
+    if (gardenTapId !== null && event.pointerId === gardenTapId) {
+      if (Math.hypot(event.clientX - gardenTapStartX, event.clientY - gardenTapStartY) > 8) {
+        gardenTapId = null;
+      }
+    }
+  });
+  garden.addEventListener("pointerup", event => {
+    if (gardenTapId !== null && event.pointerId === gardenTapId && pendingSeedType) {
+      gardenTapId = null;
+      const section = sectionFromPoint(event.clientX, event.clientY);
+      if (section) {
+        const idx = Number(section.dataset.sectionIndex);
+        if (sections[idx]?.locked) {
+          showToast("前の庭師さんのお庭は大切に残しているよ");
+        } else {
+          const point = positionFromPoint(event.clientX, event.clientY, section);
+          addSeed(pendingSeedType, point.x, point.y, idx);
+        }
+      }
+    } else {
+      gardenTapId = null;
+    }
+  });
+  garden.addEventListener("pointercancel", event => {
+    if (event.pointerId === gardenTapId) gardenTapId = null;
+  });
+  window.addEventListener("scroll", queueSeedBasketVisibility, { passive: true });
+  window.addEventListener("resize", queueSeedBasketVisibility, { passive: true });
+
+  function initializeGarden() {
+    if (!runDataFormatSelfCheck()) throw new Error("音庭データの安全確認に失敗しました");
+    let saved = null;
+    try {
+      const text = localStorage.getItem(SESSION_KEY) || localStorage.getItem(LEGACY_SESSION_KEY);
+      if (text) saved = normalizeGardenData(JSON.parse(text));
+    } catch (_) {
+      localStorage.removeItem(SESSION_KEY);
+    }
+    if (saved) replaceGardenFromData(saved);
+    else {
+      for (let index = 0; index < 4; index += 1) addSection({}, false);
+      renderSections();
+      renderRelayHistory();
+    }
+    updateTempoDisplay();
+  }
+
+  initializeGarden();
+  updateSeedBasketVisibility();
+
+  Object.defineProperty(window, "OtoniwaData", {
+    value: Object.freeze({
+      validate: normalizeGardenData,
+      snapshot: serializeGarden,
+    }),
+    configurable: false,
+    writable: false,
+  });
 
   if ("serviceWorker" in navigator && window.isSecureContext) {
     window.addEventListener("load", () => {
