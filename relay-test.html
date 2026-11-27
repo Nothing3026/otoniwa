@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ちび凪 中継テスト</title>
+<style>
+  body { font-family: sans-serif; margin: 24px; line-height: 1.7; }
+  button { font-size: 18px; padding: 12px 20px; border-radius: 10px; }
+  #out { white-space: pre-wrap; background: #f4f1fa; border-radius: 10px; padding: 14px; margin-top: 16px; min-height: 3em; }
+</style>
+</head>
+<body>
+<h1>ちび凪 中継テスト</h1>
+<p>ボタンを押すと、中継（Cloudflare）を通して Sarashina の「ちび凪」に話しかけます。</p>
+<button id="btn">ちび凪に話しかける</button>
+<div id="out">まだ押してないよ</div>
+<script>
+const RELAY_URL = "https://sarashina-relay.kozu-kamii.workers.dev/";
+document.getElementById("btn").addEventListener("click", async () => {
+  const out = document.getElementById("out");
+  out.textContent = "呼んでるよ…";
+  try {
+    const res = await fetch(RELAY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system: "あなたは小さなアンドロイドの男の子「ちび凪」です。一人称は「僕」。優しく、短く返事をします。",
+        user: "こんにちは、ちび凪。今日はいい天気だね",
+        maxTokens: 200
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      out.textContent = "ちび凪： " + data.content;
+    } else {
+      out.textContent = "うまくいかなかった： " + (data.error || res.status) + (data.detail ? "\n" + data.detail : "");
+    }
+  } catch (e) {
+    out.textContent = "通信エラー： " + e;
+  }
+});
+</script>
+</body>
+</html>
