@@ -718,3 +718,77 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 }
+
+/* ── Landscape (short-height screens, e.g. phones sideways) ── */
+@media (orientation: landscape) and (max-height: 540px) {
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    width: calc(100% - 16px);
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    padding: 8px 0 10px;
+  }
+  .topbar { margin-bottom: 8px; }
+  .brand { gap: 9px; }
+  .brand-mark { width: 36px; height: 36px; border-radius: 12px; font-size: 17px; }
+  .brand h1 { font-size: 1.25rem; }
+  .brand p { display: none; }
+  .transport { gap: 5px; }
+  .control { min-height: 36px; padding: 0 11px; }
+  .workspace {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: 168px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .seed-tray {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 10px;
+    border-radius: 20px;
+  }
+  .tray-heading { margin-bottom: 8px; }
+  .seed-list {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    align-content: start;
+    overflow-y: auto;
+  }
+  .seed-card {
+    display: flex;
+    min-height: 62px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 3px;
+    border-radius: 14px;
+    text-align: center;
+  }
+  .seed-icon { width: 30px; height: 30px; font-size: 17px; }
+  .seed-copy strong { font-size: .7rem; }
+  .seed-copy small, .drag-grip { display: none; }
+  .tempo-control { margin-top: 8px; padding: 8px 9px 7px; }
+  .garden-wrap {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 8px 8px 7px;
+    border-radius: 22px;
+  }
+  .garden-toolbar { padding-bottom: 7px; }
+  .path-button { min-height: 34px; }
+  .garden { flex: 1; min-height: 0; }
+  .garden-map { padding: 6px 4px 0; }
+  .relay-panel { margin-top: 7px; }
+  .garden-note { display: none; }
+  .resident { width: 42px; height: 42px; }
+  .resident-icon { font-size: 22px; }
+  .resident-bubble { bottom: 58px; width: min(88%, 370px); padding: 11px 12px; }
+  .recording-panel { grid-template-columns: 1fr; gap: 8px; margin-top: 7px; padding: 10px 12px; }
+  .recording-actions { justify-content: flex-end; }
+}
