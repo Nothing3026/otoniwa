@@ -1,4 +1,4 @@
-const CACHE_NAME = "otoniwa-v20";
+const CACHE_NAME = "otoniwa-v21";
 const OFFLINE_ASSETS = [
   "./",
   "./index.html",

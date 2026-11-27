@@ -1452,7 +1452,14 @@
     isPlaying = true;
     followPlayback = follow;
     const lastPlayableSectionStart = Math.max(0, playbackStepCount() - 8);
-    currentStep = from === "start" ? 0 : Math.min(activeSectionIndex * 8, lastPlayableSectionStart);
+    if (from === "start") {
+      currentStep = 0;
+    } else {
+      const viewIndex = Math.max(0, Math.min(sections.length - 1, Math.round(garden.scrollLeft / Math.max(1, garden.clientWidth))));
+      activeSectionIndex = viewIndex;
+      renderGardenMap();
+      currentStep = Math.min(viewIndex * 8, lastPlayableSectionStart);
+    }
     if (follow) {
       const startSection = Math.floor(currentStep / 8);
       activeSectionIndex = startSection;
@@ -1930,6 +1937,7 @@
         if (sections[idx]?.locked) {
           showToast("前の庭師さんのお庭は大切に残しているよ");
         } else {
+          setActiveSection(idx, false);
           const point = positionFromPoint(event.clientX, event.clientY, section);
           addSeed(pendingSeedType, point.x, point.y, idx);
         }
